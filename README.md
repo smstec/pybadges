@@ -7,6 +7,9 @@
 pybadges is a Python library and command line tool that allows you to create
 Github-style badges as SVG images. For example:
 
+## Reason for fork
+Supporting multi-line badges via dynamic templates
+
 ![pip installation](tests/golden-images/pip.svg)
 ![pip installation](tests/golden-images/license.svg)
 ![pip installation](tests/golden-images/build-passing.svg)
