@@ -1,46 +1,161 @@
-# Copyright 2018 The pybadge Authors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""A setup module for pybadges."""
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-import base64
-import re
+# pylint: disable=exec-used,broad-except
 
-from setuptools import setup
+""" Build dsml_model as a package for distribution. """
 
+# Note: To use the 'upload' functionality of this file, you must:
+#   $ pip install twine
 
-def get_long_description():
-    """Transform README.md into a usable long description.
+import io
+import json
+import os
+import sys
+import tarfile
+from datetime import datetime
+from shutil import copyfile, rmtree
 
-    Replaces relative references to svg images to absolute https references.
-    """
-
-    with open('README.md') as f:
-        read_me = f.read()
-
-    def replace_relative_with_absolute(match):
-        svg_path = match.group(0)[1:-1]
-        return ('(https://github.com/google/pybadges/raw/master/'
-                '%s?sanitize=true)' % svg_path)
-
-    return re.sub(r'\(tests/golden-images/.*?\.svg\)',
-                  replace_relative_with_absolute, read_me)
+import setuptools.command.sdist as sdist
+from setuptools import Command, find_packages, setup
 
 
+# Package meta-data.
+NAME = 'pybadges'
+DESCRIPTION = 'Modified pybadges for Sophos AI'
+AUTHOR = 'Matt Stec'
+REQUIRES_PYTHON = '>=3.5'
+
+# What packages are required for this module to be executed?
+REQUIRED = [
+    'Jinja2>=2.9.0,<3',
+    'requests>=2.9.0,<3',
+    ]
+
+# What packages are optional?
+EXTRAS = {
+    'pil-measurement': ['Pillow>=5,<6'],
+    'dev': [
+        'fonttools>=3.26', 'nox', 'Pillow>=5', 'pytest>=3.6', 'xmldiff>=2.4',
+    ],
+}
+
+ENTRY_POINTS = """
+               """
+
+DOWNLOADS = [
+]
+
+
+# The rest you shouldn't have to touch too much :)
+# ------------------------------------------------
+# Except, perhaps the License and Trove Classifiers!
+# If you do change the License, remember to change the Trove Classifier!
+
+HERE = os.path.abspath(os.path.dirname(__file__))
+
+# Import the README and use it as the long-description.
+# Note: this will only work if 'README.md' is present in your MANIFEST.in file!
+try:
+    with io.open(os.path.join(HERE, 'README.md'), encoding='utf-8') as f:
+        LONG_DESCRIPTION = '\n' + f.read()
+except Exception:
+    LONG_DESCRIPTION = DESCRIPTION
+
+# Load the package's version.py module as a dictionary.
+ABOUT = {}
+VERSION = None
+VFILE = os.path.join(HERE, NAME, 'version.py')
+if not VERSION:
+    if os.path.exists(os.path.join(HERE, 'version.py')):
+        copyfile(os.path.join(HERE, 'version.py'), VFILE)
+
+    if not os.path.exists(VFILE):
+        with open(VFILE, 'wt') as f:
+            i = datetime.now()
+            f.write('__version__ = "2.3.0-beta+{}{:0>2}{:0>2}.{}{:0>2}"'.format(i.year, i.month, i.day, i.hour, i.minute))
+    with open(VFILE) as f:
+        exec(f.read(), ABOUT)
+else:
+    ABOUT['__version__'] = VERSION
+
+
+class DownloadS3(sdist.sdist):
+    """ Download files from S3 for package inclusion """
+
+    def run(self):
+        import boto3
+        resource = boto3.resource('s3')
+
+        # Download JSON listing of releases
+        release_obj = resource.Object('dsml-configuration', 'package-binaries/releases.json').get()
+        release_contents = release_obj['Body'].read()
+        release_data = json.loads(release_contents)
+
+        for download in DOWNLOADS:
+            local_file = os.path.join(HERE, download['target'])
+            print('Downloading {}'.format(local_file))
+            try:
+                os.makedirs(os.path.dirname(local_file), exist_ok=True)
+            except TypeError:
+                try:
+                    os.makedirs(os.path.dirname(local_file))
+                except OSError:
+                    pass
+            dl_key = release_data['releases'][download['release_key']]
+            resource.Bucket('dsml-configuration').download_file(dl_key, local_file)
+            compression = download.get('compression', None)
+            if compression == 'tgz':
+                tar = tarfile.open(local_file, 'r:gz')
+                tar.extractall(os.path.dirname(local_file))
+                tar.close()
+            elif compression is None:
+                pass
+            else:
+                raise NotImplementedError('Compression format not handled')
+        sdist.sdist.run(self)
+        os.unlink(VFILE)
+
+
+class UploadCommand(Command):
+    """Support setup.py upload."""
+
+    description = 'Build and publish the package.'
+    user_options = []
+
+    @staticmethod
+    def status(outs):
+        """Prints things in bold."""
+        print('\033[1m{0}\033[0m'.format(outs))
+
+    def initialize_options(self):
+        """ Empty function """
+
+    def finalize_options(self):
+        """ Empty function """
+
+    def run(self):
+        """ Run the upload command """
+        try:
+            self.status('Removing previous builds…')
+            rmtree(os.path.join(HERE, 'dist'))
+        except OSError:
+            pass
+
+        self.status('Building Source and Wheel (universal) distribution…')
+        os.system('{0} setup.py sdist'.format(sys.executable))
+
+        self.status('Uploading the package to PyPI via Twine…')
+        os.system('twine upload -r dev dist/*')
+
+        sys.exit()
+
+
+# Where the magic happens:
 setup(
-    name='pybadges',
-    version='2.3.0',  # Also change in version.py.
-    author='Brian Quinlan',
+    name=NAME,
+    version=ABOUT['__version__'],
+    author='Brian Quinlan + ' + AUTHOR,
     author_email='brian@sweetapp.com',
     classifiers=[
         'Development Status :: 5 - Production/Stable',
@@ -54,25 +169,29 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Operating System :: OS Independent',
-    ],
-    description='A library and command-line tool for generating Github-style ' +
-    'badges',
-    keywords="github gh-badges badge shield status",
+        ],
+    description=DESCRIPTION,
+    keywords='github gh-badges badge shield status',
+    long_description=LONG_DESCRIPTION,
+    long_description_content_type='text/markdown',
+    python_requires=REQUIRES_PYTHON,
+    url='https://github.com/google/pybadges',
+    packages=find_packages(exclude=('tests',)),
     package_data={
         'pybadges': [
-            'badge-template-full.svg', 'default-widths.json', 'py.typed'
-        ]
-    },
-    long_description=get_long_description(),
-    long_description_content_type='text/markdown',
-    python_requires='>=3.4',
-    install_requires=['Jinja2>=2.9.0,<3', 'requests>=2.9.0,<3'],
-    extras_require={
-        'pil-measurement': ['Pillow>=5,<6'],
-        'dev': [
-            'fonttools>=3.26', 'nox', 'Pillow>=5', 'pytest>=3.6', 'xmldiff>=2.4'
+            'badge-template-full.svg', 'default-widths.json', 'py.typed',
         ],
     },
-    license='Apache-2.0',
-    packages=["pybadges"],
-    url='https://github.com/google/pybadges')
+    # If your package is a single module, use this instead of 'packages':
+    # py_modules=['mypackage'],
+    entry_points=ENTRY_POINTS,
+    install_requires=REQUIRED,
+    extras_require=EXTRAS,
+    include_package_data=True,
+    license='Proprietary',
+    # $ setup.py publish support.
+    cmdclass={
+        'upload': UploadCommand,
+        'sdist': DownloadS3,
+    },
+)
