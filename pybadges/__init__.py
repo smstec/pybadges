@@ -32,6 +32,8 @@ gh-badges library
 import base64
 import imghdr
 import mimetypes
+import os
+# import tempfile
 from typing import Optional
 import urllib.parse
 from xml.dom import minidom
@@ -41,12 +43,14 @@ import requests
 
 from pybadges import text_measurer
 from pybadges import precalculated_text_measurer
+from pybadges import template as svg_template
 from pybadges.version import __version__
 
 _JINJA2_ENVIRONMENT = jinja2.Environment(
     trim_blocks=True,
     lstrip_blocks=True,
-    loader=jinja2.PackageLoader('pybadges', '.'),
+    # loader=jinja2.PackageLoader('pybadges', '.'),
+    loader=jinja2.FileSystemLoader('/'),
     autoescape=jinja2.select_autoescape(['svg']))
 
 # Use the same color scheme as describe in:
@@ -113,8 +117,8 @@ def _embed_image(url: str) -> str:
 
 
 def badge(
-    left_text: str,
-    right_text: str,
+    left_text: list,
+    right_text: list,
     left_link: Optional[str] = None,
     right_link: Optional[str] = None,
     whole_link: Optional[str] = None,
@@ -137,9 +141,9 @@ def badge(
 
     Args:
         left_text: The text that should appear on the left-hand-side of the
-            badge e.g. "coverage".
+            badge e.g. "coverage".  If list, each element is a line in the badge
         right_text: The text that should appear on the right-hand-side of the
-            badge e.g. "23%".
+            badge e.g. "23%". If list, each element is a line in the badge
         left_link: The URL that should be redirected to when the left-hand text
             is selected.
         right_link: The URL that should be redirected to when the right-hand
@@ -180,27 +184,50 @@ def badge(
 
     if (left_link or right_link) and whole_link:
         raise ValueError(
-            'whole_link may not bet set with left_link or right_link')
-    template = _JINJA2_ENVIRONMENT.get_template('badge-template-full.svg')
+            'whole_link may not be set with left_link or right_link')
+
+    if not isinstance(left_text, list):
+        left_text = [left_text]
+
+    if not isinstance(right_text, list):
+        right_text = [right_text]
+
+    template_name = svg_template.write_template(len(left_text), len(right_text))
+    template = _JINJA2_ENVIRONMENT.get_template(template_name)
+    os.unlink(template_name)
 
     if logo and embed_logo:
         logo = _embed_image(logo)
 
-    svg = template.render(
-        left_text=left_text,
-        right_text=right_text,
-        left_text_width=measurer.text_width(left_text) / 10.0,
-        right_text_width=measurer.text_width(right_text) / 10.0,
-        left_link=left_link,
-        right_link=right_link,
-        whole_link=whole_link,
-        logo=logo,
-        left_color=_NAME_TO_COLOR.get(left_color, left_color),
-        right_color=_NAME_TO_COLOR.get(right_color, right_color),
-        whole_title=whole_title,
-        left_title=left_title,
-        right_title=right_title,
-    )
+    template_args = {'left_link': left_link,
+                     'right_link': right_link,
+                     'whole_link': whole_link,
+                     'logo': logo,
+                     'left_color': _NAME_TO_COLOR.get(left_color, left_color),
+                     'right_color': _NAME_TO_COLOR.get(right_color, right_color),
+                     'whole_title': whole_title,
+                     'left_title': left_title,
+                     'right_title': right_title}
+
+    left_text_width = -1
+    for i, text in enumerate(left_text):
+        _len = measurer.text_width(text) / 10.0
+        template_args[f'left_text_{i}_width'] = _len
+        template_args[f'left_text_{i}'] = text
+        if left_text_width < _len:
+            left_text_width = _len
+    template_args['left_text_width'] = left_text_width
+
+    right_text_width = -1
+    for i, text in enumerate(right_text):
+        _len = measurer.text_width(text) / 10.0
+        template_args[f'right_text_{i}_width'] = _len
+        template_args[f'right_text_{i}'] = text
+        if right_text_width < _len:
+            right_text_width = _len
+    template_args['right_text_width'] = right_text_width
+
+    svg = template.render(**template_args)
     xml = minidom.parseString(svg)
     _remove_blanks(xml)
     xml.normalize()
