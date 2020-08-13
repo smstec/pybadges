@@ -1,13 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright 2017-2019, Sophos Limited. All rights reserved.
-#
-# 'Sophos' and 'Sophos Anti-Virus' are registered trademarks of
-# Sophos Limited and Sophos Group. All other product and company
-# names mentioned are trademarks or registered trademarks of their
-# respective owners.
-
 # pylint: disable=exec-used,broad-except
 
 """ Build dsml_model as a package for distribution. """
@@ -30,8 +23,6 @@ from setuptools import Command, find_packages, setup
 # Package meta-data.
 NAME = 'pybadges'
 DESCRIPTION = 'Modified pybadges for Sophos AI'
-URL = 'https://github.com/inv-ds-research/operations'
-EMAIL = 'matt.stec@sophos.com'
 AUTHOR = 'Matt Stec'
 REQUIRES_PYTHON = '>=3.5'
 
